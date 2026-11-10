@@ -50,7 +50,7 @@ function createApp(database, { adminPassword, sessionSecret, secureCookies = fal
   app.use('/api/admin', (req, res) => res.status(404).json({ error: 'Admin API endpoint not found.' })); app.use((error, req, res, next) => { if (res.headersSent) return next(error); console.error('[class-threads] request failed', { method: req.method, url: req.originalUrl, error: error.message }); res.status(500).json({ error: 'The request could not be completed. Please try again.' }); }); return app;
 }
 
-async function createProductionApp() { if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required in production; Neon is not configured.'); const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2, connectionTimeoutMillis: 10000, idleTimeoutMillis: 10000, ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined }); await initializePostgres(pool); return createApp(pool, getAdminConfig()); }
+async function createProductionApp() { const config = getAdminConfig(); validateAdminConfig(config.adminPassword, config.sessionSecret); if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required in production; Neon is not configured.'); const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2, connectionTimeoutMillis: 10000, idleTimeoutMillis: 10000, ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined }); await initializePostgres(pool); return createApp(pool, config); }
 function start() { const config = getAdminConfig(); validateAdminConfig(config.adminPassword, config.sessionSecret); const students = initializeDatabase(); const app = createApp(students, config); return { server: app.listen(PORT, '0.0.0.0', () => console.log(`Class T-Shirt Registration System listening on port ${PORT}`)), students }; }
 let productionAppPromise;
 const vercelHandler = (req, res) => {
@@ -60,7 +60,12 @@ const vercelHandler = (req, res) => {
     .catch((error) => {
       productionAppPromise = undefined;
       console.error('[class-threads] production startup failed', error);
-      if (!res.headersSent) res.status(500).json({ error: 'The application could not start. Please try again later.' });
+      if (!res.headersSent) {
+        const isConfigurationError = error instanceof Error && /^(ADMIN_PASSWORD|SESSION_SECRET|DATABASE_URL)/.test(error.message);
+        res.status(isConfigurationError ? 500 : 503).json({
+          error: isConfigurationError ? error.message : 'The application could not start. Please try again later.',
+        });
+      }
     });
 };
 Object.assign(vercelHandler, { createApp, getAdminConfig, getDatabasePath, initializeDatabase, initializePostgres, start });
