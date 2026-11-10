@@ -6,6 +6,7 @@ const express = require('express');
 const session = require('express-session');
 const ExcelJS = require('exceljs');
 const Database = require('better-sqlite3');
+const { Pool } = require('pg');
 
 const PORT = Number(process.env.PORT || 8000);
 const VALID_SIZES = new Set(['S', 'M', 'L', 'XL', 'XXL']);
@@ -72,6 +73,51 @@ class SQLiteSessionStore extends session.Store {
   }
 }
 
+class PostgresSessionStore extends session.Store {
+  constructor(pool) {
+    super();
+    this.pool = pool;
+  }
+  async get(sessionId, callback) {
+    try {
+      const { rows } = await this.pool.query('SELECT data, expires FROM sessions WHERE sid = $1', [sessionId]);
+      const row = rows[0];
+      if (!row) return callback(null, null);
+      if (Number(row.expires) <= Date.now()) {
+        await this.pool.query('DELETE FROM sessions WHERE sid = $1', [sessionId]);
+        return callback(null, null);
+      }
+      callback(null, typeof row.data === 'string' ? JSON.parse(row.data) : row.data);
+    } catch (error) { callback(error); }
+  }
+  async set(sessionId, value, callback = () => {}) {
+    try {
+      const expires = value.cookie?.expires ? new Date(value.cookie.expires).getTime() : Date.now() + (value.cookie?.maxAge || 8 * 60 * 60 * 1000);
+      await this.pool.query('INSERT INTO sessions (sid, expires, data) VALUES ($1, $2, $3) ON CONFLICT (sid) DO UPDATE SET expires = EXCLUDED.expires, data = EXCLUDED.data', [sessionId, expires, JSON.stringify(value)]);
+      callback(null);
+    } catch (error) { callback(error); }
+  }
+  async touch(sessionId, value, callback = () => {}) {
+    try {
+      const expires = value.cookie?.expires ? new Date(value.cookie.expires).getTime() : Date.now() + (value.cookie?.maxAge || 8 * 60 * 60 * 1000);
+      await this.pool.query('UPDATE sessions SET expires = $1 WHERE sid = $2', [expires, sessionId]);
+      callback(null);
+    } catch (error) { callback(error); }
+  }
+  async destroy(sessionId, callback = () => {}) {
+    try { await this.pool.query('DELETE FROM sessions WHERE sid = $1', [sessionId]); callback(null); } catch (error) { callback(error); }
+  }
+}
+
+async function initializePostgresDatabase(environment = process.env) {
+  if (!environment.DATABASE_URL) throw new Error('DATABASE_URL is required for production database access.');
+  const pool = new Pool({ connectionString: environment.DATABASE_URL, max: 3, ssl: { rejectUnauthorized: false } });
+  await pool.query(`CREATE TABLE IF NOT EXISTS students (id BIGSERIAL PRIMARY KEY, full_name TEXT NOT NULL CHECK (length(trim(full_name)) > 0), shirt_size TEXT NOT NULL CHECK (shirt_size IN ('S','M','L','XL','XXL')), created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS sessions (sid TEXT PRIMARY KEY, expires BIGINT NOT NULL, data JSONB NOT NULL)`);
+  await pool.query('DELETE FROM sessions WHERE expires <= $1', [Date.now()]);
+  return { isPostgres: true, pool };
+}
+
 function getDatabasePath(environment = process.env) {
   return environment.DB_PATH
     ? path.resolve(environment.DB_PATH)
@@ -108,6 +154,26 @@ function initializeDatabase(databasePath = getDatabasePath()) {
   return database;
 }
 
+async function insertStudent(database, fullName, shirtSize) {
+  if (database.isPostgres) return database.pool.query('INSERT INTO students (full_name, shirt_size) VALUES ($1, $2)', [fullName, shirtSize]);
+  return database.prepare('INSERT INTO students (full_name, shirt_size) VALUES (?, ?)').run(fullName, shirtSize);
+}
+
+async function listStudents(database) {
+  if (database.isPostgres) return (await database.pool.query('SELECT id, full_name, shirt_size FROM students ORDER BY id')).rows;
+  return database.prepare('SELECT id, full_name, shirt_size FROM students ORDER BY id').all();
+}
+
+async function deleteStudent(database, studentId) {
+  if (database.isPostgres) return (await database.pool.query('DELETE FROM students WHERE id = $1', [studentId])).rowCount;
+  return database.prepare('DELETE FROM students WHERE id = ?').run(studentId).changes;
+}
+
+async function exportStudents(database) {
+  if (database.isPostgres) return (await database.pool.query('SELECT full_name, shirt_size FROM students ORDER BY id')).rows;
+  return database.prepare('SELECT full_name, shirt_size FROM students ORDER BY id').all();
+}
+
 function createApp(students, { adminPassword, sessionSecret, secureCookies = false } = {}) {
   validateAdminConfig(adminPassword, sessionSecret);
 
@@ -117,7 +183,7 @@ function createApp(students, { adminPassword, sessionSecret, secureCookies = fal
   app.use(session({
     name: SESSION_COOKIE_NAME,
     secret: sessionSecret,
-    store: new SQLiteSessionStore(students),
+    store: students.isPostgres ? new PostgresSessionStore(students.pool) : new SQLiteSessionStore(students),
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -148,7 +214,7 @@ function createApp(students, { adminPassword, sessionSecret, secureCookies = fal
     response.status(404).json({ error: 'Not found.' });
   });
 
-  app.post('/api/students', (request, response, next) => {
+  app.post('/api/students', async (request, response, next) => {
     try {
       const { full_name: fullName, shirt_size: shirtSize } = request.body || {};
       if (typeof fullName !== 'string' || !fullName.trim()) {
@@ -161,9 +227,7 @@ function createApp(students, { adminPassword, sessionSecret, secureCookies = fal
         return response.status(400).json({ error: 'Please choose a valid T-shirt size.' });
       }
 
-      students
-        .prepare('INSERT INTO students (full_name, shirt_size) VALUES (?, ?)')
-        .run(fullName.trim(), shirtSize);
+      await insertStudent(students, fullName.trim(), shirtSize);
       response.status(201).json({ message: 'Registration successful.' });
     } catch (error) {
       next(error);
@@ -202,26 +266,24 @@ function createApp(students, { adminPassword, sessionSecret, secureCookies = fal
     });
   });
 
-  app.get('/api/admin/students', requireAdmin, (request, response, next) => {
+  app.get('/api/admin/students', requireAdmin, async (request, response, next) => {
     try {
-      const registrations = students
-        .prepare('SELECT id, full_name, shirt_size FROM students ORDER BY id')
-        .all();
+      const registrations = await listStudents(students);
       response.json({ students: registrations });
     } catch (error) {
       next(error);
     }
   });
 
-  app.delete('/api/admin/students/:id', requireAdmin, (request, response, next) => {
+  app.delete('/api/admin/students/:id', requireAdmin, async (request, response, next) => {
     const studentId = Number(request.params.id);
     if (!Number.isSafeInteger(studentId) || studentId < 1) {
       return response.status(400).json({ error: 'Invalid student registration ID.' });
     }
 
     try {
-      const result = students.prepare('DELETE FROM students WHERE id = ?').run(studentId);
-      if (result.changes === 0) {
+      const changes = await deleteStudent(students, studentId);
+      if (changes === 0) {
         return response.status(404).json({ error: 'Student registration not found.' });
       }
       response.json({ message: 'Student registration deleted.' });
@@ -232,9 +294,7 @@ function createApp(students, { adminPassword, sessionSecret, secureCookies = fal
 
   app.get('/api/admin/export', requireAdmin, async (request, response, next) => {
     try {
-      const registrations = students
-        .prepare('SELECT full_name, shirt_size FROM students ORDER BY id')
-        .all();
+      const registrations = await exportStudents(students);
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('Student List', {
         views: [{ state: 'frozen', ySplit: 1 }],
@@ -337,13 +397,23 @@ function start() {
 }
 
 function createVercelHandler() {
-  let app;
-  return (request, response) => {
-    if (!app) {
-      const adminConfig = getAdminConfig();
-      app = createApp(initializeDatabase(), adminConfig);
+  let appPromise;
+  return async (request, response) => {
+    if (!appPromise) {
+      appPromise = (async () => {
+        const adminConfig = getAdminConfig();
+        const database = process.env.DATABASE_URL
+          ? await initializePostgresDatabase()
+          : initializeDatabase(path.join('/tmp', 'class-threads.sqlite'));
+        return createApp(database, adminConfig);
+      })();
     }
-    return app(request, response);
+    try {
+      return (await appPromise)(request, response);
+    } catch (error) {
+      console.error('Could not initialize the production database:', error);
+      response.status(500).json({ error: 'The application database is unavailable.' });
+    }
   };
 }
 
