@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#193a5a">
+    <title>Admin Login | Class Threads</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/admin.js" defer></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="Class T-Shirt registration">
+        <span class="brand-mark" aria-hidden="true">C</span>
+        <span>CLASS<span class="brand-light">THREADS</span></span>
+      </a>
+      <span class="header-note">ADMIN LOGIN</span>
+    </header>
+
+    <main>
+      <section class="admin-hero" aria-labelledby="admin-title">
+        <p class="eyebrow"><span class="eyebrow-line"></span> CLASS T-SHIRT PROGRAM</p>
+        <h1 id="admin-title">Admin Login</h1>
+        <p>Manage the class order and prepare the final student list.</p>
+      </section>
+
+      <section id="login-panel" class="admin-panel admin-login" aria-labelledby="login-title">
+        <div class="section-heading">
+          <span class="step-number">01</span>
+          <div>
+            <p class="eyebrow">ADMIN ACCESS</p>
+            <h2 id="login-title">Sign in</h2>
+          </div>
+        </div>
+        <p class="card-intro">Enter the admin password to view registrations.</p>
+        <form id="login-form">
+          <label for="admin-password">Password</label>
+          <input id="admin-password" name="password" type="password" autocomplete="current-password" required>
+          <button class="button button-primary submit-button" type="submit">Sign in <span aria-hidden="true">→</span></button>
+          <p id="login-message" class="form-message" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+
+      <section id="dashboard-panel" class="admin-panel roster-card" aria-labelledby="roster-title" hidden>
+        <div class="roster-top">
+          <div class="section-heading">
+            <span class="step-number">02</span>
+            <div>
+              <p class="eyebrow">CLASS ROSTER</p>
+              <h2 id="roster-title">Registered students</h2>
+            </div>
+          </div>
+          <button id="logout-button" class="button button-outline" type="button">Sign out</button>
+        </div>
+        <div class="stats-row">
+          <div class="total-stat">
+            <span class="stat-number" id="student-total">0</span>
+            <span class="stat-label">students registered</span>
+          </div>
+          <div class="size-stats" aria-label="Registrations by T-shirt size">
+            <div><span class="size-chip">S</span><span id="count-s">0</span></div>
+            <div><span class="size-chip">M</span><span id="count-m">0</span></div>
+            <div><span class="size-chip">L</span><span id="count-l">0</span></div>
+            <div><span class="size-chip">XL</span><span id="count-xl">0</span></div>
+            <div><span class="size-chip">XXL</span><span id="count-xxl">0</span></div>
+          </div>
+        </div>
+        <p id="dashboard-message" class="form-message" role="status" aria-live="polite"></p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th scope="col">FULL NAME</th><th scope="col">T-SHIRT SIZE</th><th scope="col">ACTION</th></tr></thead>
+            <tbody id="student-list">
+              <tr><td class="empty-state" colspan="2">Loading class list…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="roster-footer">
+          <span class="roster-note">Every registration, all in one place.</span>
+          <a class="button button-outline" href="/api/admin/export">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2v10m0 0 4-4m-4 4L6 8M3 13v4h14v-4"/></svg>
+            Download Student List
+          </a>
+        </div>
+      </section>
+    </main>
+
+    <footer><span>CLASS THREADS</span><span>Admin access is restricted to authorized users.</span></footer>
+  </body>
+</html>

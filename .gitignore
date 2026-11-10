@@ -1,0 +1,4 @@
+node_modules/
+.env
+students.db*
+npm-debug.log*

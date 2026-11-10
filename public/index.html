@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#193a5a">
+    <title>Class T-Shirt Registration</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" defer></script>
+    <script src="/admin-login-dodge.js" defer></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="Class T-Shirt home">
+        <span class="brand-mark" aria-hidden="true">C</span>
+        <span>CLASS<span class="brand-light">THREADS</span></span>
+      </a>
+      <a class="admin-login-link" href="/admin" aria-describedby="admin-login-hint">
+        Admin Login <span aria-hidden="true">→</span>
+      </a>
+      <span id="admin-login-hint" class="visually-hidden">Keyboard access: press Tab to focus this link, then Enter to open admin login.</span>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="page-title">
+        <div class="hero-content">
+          <h1 id="page-title" class="hero-title">What's Up, <span>Classmates? 😎</span></h1>
+          <p class="hero-subtitle">Designed by Unity. Defined by Style.</p>
+        </div>
+      </section>
+
+      <section class="student-layout" aria-label="Student registration">
+        <div class="registration-card">
+          <div class="section-heading">
+            <span class="step-number">01</span>
+            <div>
+              <p class="eyebrow">YOUR ORDER</p>
+              <h2>Save your spot</h2>
+            </div>
+          </div>
+          <p class="card-intro">Tell us what to put on the list. Please double-check your size before submitting.</p>
+          <form id="registration-form">
+            <label for="full-name">Full Name</label>
+            <input id="full-name" name="full_name" type="text" autocomplete="name" maxlength="120" placeholder="e.g. Shfrw" required>
+
+            <label for="shirt-size">T-Shirt Size</label>
+            <div class="select-wrap">
+              <select id="shirt-size" name="shirt_size" required>
+                <option value="" disabled selected>Select your size</option>
+                <option value="S">S</option>
+                <option value="M">M</option>
+                <option value="L">L</option>
+                <option value="XL">XL</option>
+                <option value="XXL">XXL</option>
+              </select>
+            </div>
+
+            <button class="button button-primary submit-button" type="submit">
+              Submit Registration <span aria-hidden="true">→</span>
+            </button>
+            <p id="form-message" class="form-message" role="status" aria-live="polite"></p>
+          </form>
+          <p class="form-footnote"><span aria-hidden="true">✓</span> Your selection is saved securely to the class list.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>CLASS THREADS</span>
+      <span>Made together, worn together.</span>
+      <a class="admin-access-link" href="/admin">Class representative? Admin access</a>
+    </footer>
+  </body>
+</html>
