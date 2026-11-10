@@ -1,7 +1,13 @@
 const path = require('node:path');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+const dotenv = require('dotenv');
+
+for (const environmentFile of ['.env.development.local', '.env.local', '.env']) {
+  const environmentPath = path.join(__dirname, environmentFile);
+  if (fs.existsSync(environmentPath)) dotenv.config({ path: environmentPath });
+}
+
 const express = require('express');
 const session = require('express-session');
 const ExcelJS = require('exceljs');
