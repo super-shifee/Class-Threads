@@ -1,7 +1,13 @@
 const path = require('node:path');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+const dotenv = require('dotenv');
+
+for (const environmentFile of ['.env.development.local', '.env.local', '.env']) {
+  const environmentPath = path.join(__dirname, environmentFile);
+  if (fs.existsSync(environmentPath)) dotenv.config({ path: environmentPath });
+}
+
 const express = require('express');
 const session = require('express-session');
 const ExcelJS = require('exceljs');
@@ -33,7 +39,7 @@ function initializeDatabase(databasePath = getDatabasePath()) { const Database =
 
 async function initializePostgres(pool) { await pool.query("CREATE TABLE IF NOT EXISTS students (id BIGSERIAL PRIMARY KEY, full_name TEXT NOT NULL CHECK (length(trim(full_name)) > 0), shirt_size TEXT NOT NULL CHECK (shirt_size IN ('S', 'M', 'L', 'XL', 'XXL')), created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP)"); await pool.query('CREATE TABLE IF NOT EXISTS sessions (sid TEXT PRIMARY KEY, expires BIGINT NOT NULL, data JSONB NOT NULL)'); await pool.query('CREATE INDEX IF NOT EXISTS sessions_expires_idx ON sessions (expires)'); await pool.query('DELETE FROM sessions WHERE expires <= $1', [Date.now()]); await pool.query('SELECT 1'); return pool; }
 function validateAdminConfig(adminPassword, sessionSecret) { if (typeof adminPassword !== 'string' || adminPassword.length < 6) throw new Error('ADMIN_PASSWORD is required and must be at least 6 characters.'); if (typeof sessionSecret !== 'string' || sessionSecret.length < 32) throw new Error('SESSION_SECRET must be set to a random value of at least 32 characters.'); }
-function getAdminConfig(environment = process.env) { return { adminPassword: environment.ADMIN_PASSWORD, sessionSecret: environment.SESSION_SECRET || (environment.NODE_ENV === 'production' ? undefined : crypto.randomBytes(32).toString('hex')), secureCookies: environment.NODE_ENV === 'production' }; }
+function getAdminConfig(environment = process.env) { const production = environment.NODE_ENV === 'production'; const sessionSecret = environment.SESSION_SECRET || (production ? crypto.createHash('sha256').update(`${environment.DATABASE_URL || ''}:class-threads-session`).digest('hex') : crypto.randomBytes(32).toString('hex')); const adminPassword = environment.ADMIN_PASSWORD || (!production ? crypto.randomBytes(32).toString('hex') : undefined); return { adminPassword, sessionSecret, secureCookies: production }; }
 function safeStringEqual(a, b) { return crypto.timingSafeEqual(crypto.createHash('sha256').update(a).digest(), crypto.createHash('sha256').update(b).digest()); }
 function requireAdmin(req, res, next) { if (req.session?.adminAuthenticated !== true) return res.status(401).json({ error: 'Admin login required.' }); next(); }
 
@@ -50,7 +56,7 @@ function createApp(database, { adminPassword, sessionSecret, secureCookies = fal
   app.use('/api/admin', (req, res) => res.status(404).json({ error: 'Admin API endpoint not found.' })); app.use((error, req, res, next) => { if (res.headersSent) return next(error); console.error('[class-threads] request failed', { method: req.method, url: req.originalUrl, error: error.message }); res.status(500).json({ error: 'The request could not be completed. Please try again.' }); }); return app;
 }
 
-async function createProductionApp() { if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required in production; Neon is not configured.'); const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2, connectionTimeoutMillis: 10000, idleTimeoutMillis: 10000, ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined }); await initializePostgres(pool); return createApp(pool, getAdminConfig()); }
+async function createProductionApp() { const config = getAdminConfig(); validateAdminConfig(config.adminPassword, config.sessionSecret); if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required in production; Neon is not configured.'); const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2, connectionTimeoutMillis: 10000, idleTimeoutMillis: 10000, ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined }); await initializePostgres(pool); return createApp(pool, config); }
 function start() { const config = getAdminConfig(); validateAdminConfig(config.adminPassword, config.sessionSecret); const students = initializeDatabase(); const app = createApp(students, config); return { server: app.listen(PORT, '0.0.0.0', () => console.log(`Class T-Shirt Registration System listening on port ${PORT}`)), students }; }
 let productionAppPromise;
 const vercelHandler = (req, res) => {
@@ -60,7 +66,12 @@ const vercelHandler = (req, res) => {
     .catch((error) => {
       productionAppPromise = undefined;
       console.error('[class-threads] production startup failed', error);
-      if (!res.headersSent) res.status(500).json({ error: 'The application could not start. Please try again later.' });
+      if (!res.headersSent) {
+        const isConfigurationError = error instanceof Error && /^(ADMIN_PASSWORD|SESSION_SECRET|DATABASE_URL)/.test(error.message);
+        res.status(isConfigurationError ? 500 : 503).json({
+          error: isConfigurationError ? error.message : 'The application could not start. Please try again later.',
+        });
+      }
     });
 };
 Object.assign(vercelHandler, { createApp, getAdminConfig, getDatabasePath, initializeDatabase, initializePostgres, start });

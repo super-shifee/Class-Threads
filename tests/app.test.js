@@ -15,6 +15,13 @@ let baseUrl;
 const adminPassword = 'correct-horse-battery-staple';
 const sessionSecret = 'test-session-secret-with-at-least-thirty-two-characters';
 
+test('development startup generates local-only credentials when missing', () => {
+  const config = getAdminConfig({ NODE_ENV: 'development' });
+
+  assert.match(config.adminPassword, /^[a-f0-9]{64}$/);
+  assert.match(config.sessionSecret, /^[a-f0-9]{64}$/);
+});
+
 test('startup generates a session secret when missing without changing environment values', () => {
   const environment = { ADMIN_PASSWORD: adminPassword };
   const config = getAdminConfig(environment);
