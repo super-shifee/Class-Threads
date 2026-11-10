@@ -336,6 +336,17 @@ function start() {
   return { server, students };
 }
 
+function createVercelHandler() {
+  let app;
+  return (request, response) => {
+    if (!app) {
+      const adminConfig = getAdminConfig();
+      app = createApp(initializeDatabase(), adminConfig);
+    }
+    return app(request, response);
+  };
+}
+
 if (require.main === module) {
   try {
     start();
@@ -345,4 +356,13 @@ if (require.main === module) {
   }
 }
 
-module.exports = { createApp, getAdminConfig, getDatabasePath, initializeDatabase, start };
+const vercelHandler = createVercelHandler();
+Object.assign(vercelHandler, {
+  createApp,
+  getAdminConfig,
+  getDatabasePath,
+  initializeDatabase,
+  start,
+});
+
+module.exports = vercelHandler;
